@@ -1,7 +1,19 @@
-#sidebar ul.sidebar-buttons li.sidebar-button .sidebar-button-link {
-    color: #000000;
+#sidebar ul.sidebar-buttons li.sidebar-button a {
+    color: #fff;
+}
+
+#sidebar ul.sidebar-buttons li.sidebar-button .sidebar-button-link .sidebar-button-desc {
+    font-size: 2rem;
+    font-weight: 200;
 }
 
 #sidebar .sidebar-profile .sidebar-profile-name {
-    color: #000000;
+    color: #fff;
+    font-size: 2rem;
+    font-weight: 200;
+}
+
+#sidebar .sidebar-container {
+    padding-top: 1em;
+    background-color: rgba(0, 0, 0, 0.5);
 }

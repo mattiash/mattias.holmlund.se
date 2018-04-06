@@ -1,9 +1,7 @@
 ---
-title: "Docker Data Container"
+title: "Building the perfect data container"
 date: 2015-08-23T21:17:40+02:00
 categories:
-- category
-- subcategory
 tags:
 - docker
 keywords:
@@ -11,9 +9,9 @@ keywords:
 #thumbnailImage: //example.com/image.jpg
 ---
 
-<!--more-->
+*Data containers* is the recommended solution for storing persistent data in docker. This article explains how to build a minimalistic data container.
 
-# Building the perfect data container
+<!--more-->
 
 {{<alert info>}}
 2018-03-25: This article was originally published on [Medium](https://medium.com/@mattias.holmlund/building-the-perfect-data-container-2df6bb3528df). I now regard this method obsolete and recommend using [Docker named volumes](https://docs.docker.com/storage/volumes/) for storing data.
