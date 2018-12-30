@@ -1,0 +1,188 @@
+---
+title: "Running node in docker"
+date: 2018-12-30T16:00:00Z"
+categories:
+tags:
+- docker
+- node
+keywords:
+- tech
+#thumbnailImage: //example.com/image.jpg
+---
+
+Running your code in docker can give you reproducibility
+and guarantee that your code does not depend on your working environment.
+Getting it to run just right with tests and a small image size is however fairly complicated. This article explains how to do it with sample code.
+
+<!--more-->
+
+A good docker workflow should in my opinion satisfy the following requirements:
+
+- Code is built in docker.
+- Tests are run in docker.
+- The resulting docker image for running the code only contains the files actually necessary for running the code.
+- The docker container forwards signals to the daemon process and allows it to exit cleanly.
+
+Achieving this is surprisingly difficult.
+This article tries to explain how I do this for the images that I build.
+
+The code for this article is available on github as [mattiash/docker-typescript-sample](https://github.com/mattiash/docker-typescript-sample)-
+
+## Running modern javascript
+
+In its simplest form, a node-based project consists of a set of javascript files
+that you just have to run.
+In most real-world applications, there are however two complications:
+
+- A build step with more dependencies than the production code.
+The build step must be run to produce the javascript-files that we want to run.
+- Tests that should be run as part of the build process to make sure that the code still works.
+
+The build-step differs between different projects, but typical examples are typescript and babel.
+I use typescript, so that is what I will use in my sample code.
+
+## Docker multi-stage builds
+
+Docker 17.05 introduced [multi-stage builds](https://docs.docker.com/develop/develop-images/multistage-build/).
+They allow you to write instructions for building several different docker images in a single Dockerfile,
+and you can copy stuff between the different images.
+
+## The base image
+
+The first step in the build-process is to create a `base` docker image.
+This image forms the basis for all other images that we use in our project.
+
+```Dockerfile
+FROM node:10 as base
+WORKDIR /usr/src/app
+COPY package*.json ./
+RUN npm install --production
+```
+
+We derive the base-image from the official node image for nodejs 10.
+To increase reproducibility, you might want to specify a stricter tag for node
+(e.g. node:10.15.0).
+We then copy package.json and package-lock.json to the container
+and install the non-dev dependencies,
+since we want them in all other images for this project.
+
+## The build image
+
+The next step is to create a `build` docker image.
+The build-image includes all the dependencies that we need to build our code and test it.
+We will throw away the build-image after we are done with it,
+so we don't need to bother to keep the size of the image down.
+
+```Dockerfile
+FROM base as build
+WORKDIR /usr/src/app
+RUN npm install
+COPY . ./
+RUN npm run build
+```
+
+The build image starts with our base-image and then copies the source-code of the entire
+project into the image.
+
+By running the `npm install` before we copy stuff into the container,
+we allow the docker build to use the cached copy of npm install if package.json hasn't changed.
+
+It is possible to selectively copy the stuff that you need,
+but I usually just copy everything.
+However, I don't want to copy node_modules any code built outside the container,
+since then the contents of the resulting image would depend on whatever I had in my node_modules.
+Therefore, I also have a `.dockerignore` file with the following contents:
+
+```
+node_modules
+build
+```
+
+The `COPY . ./` actually means "copy everything except the stuff in .dockerignore".
+My `tsconfig.json` is set up to generate all js-files in `build/` which makes it easy to ignore them here
+and include them later as you will see.
+
+```json
+{
+    "compilerOptions": {
+        "module": "commonjs",
+        "target": "es2016",
+        "strict": true,
+        "moduleResolution": "node",
+        "inlineSourceMap": true,
+        "baseUrl": ".",
+        "paths": {
+            "*": ["declarations/*"]
+        },
+        "outDir": "./build"
+    },
+    "include": ["*.ts"],
+    "exclude": ["node_modules"]
+}
+```
+
+The build-image will contain all our dependencies and our code and tests built.
+We can now run our tests inside the build-image with
+
+```
+docker build --target build -t myproject-build:latest .
+docker run --name myproject-build:latest npm run test
+```
+
+The second command will show the output from the tests in the shell.
+I usually want the result of each individual test in an output file.
+These files will be generated inside the docker container and we need to get them out somehow.
+To do this, I have an npm script called `autotest` that runs the tests in a way that
+generates a `.tap` file next to each test-file and.
+I run the autotest-script from `autotest.sh`:
+
+```bash
+#!/bin/sh
+
+rm -rf output
+UUID=`uuidgen`
+IMAGE=test
+docker build --target build -t $IMAGE:$UUID .
+docker run --name $UUID $IMAGE:$UUID npm run autotest
+TEST_EXIT=$?
+docker cp $UUID:/usr/src/app/build/test output
+docker rm $UUID
+docker image rm $IMAGE:$UUID
+exit $TEST_EXIT
+```
+
+The script generates a random identifier (UUID) that I use both as the tag for the image
+as well as for the name of the container that I run the tests in.
+The script then builds the container with the `build` target
+and runs the `autotest` npm-script inside the container.
+All the generated tap-files are now inside the build/test/ directory
+along with the built test-files.
+Ideally, we only need to copy the tap-files from the container,
+but `docker cp` does not support wildcards, so we just copy the entire directory
+into the output/ folder in our local directory.
+This allows us to process the tap-files in our ci-pipeline.
+Finally, we make sure that the autotest.sh script exits
+with the same exit code as the tests that we ran.
+
+## Build production image
+
+The final step is to build the production image.
+We do this by first creating an image that contains everything from the build-image
+except the tests (we don't want them in the production image):
+
+```Dockerfile
+FROM build as notest
+WORKDIR /usr/src/app
+RUN rm -rf build/test
+```
+
+and then we create the actual production image from the `base` image
+and copy the stuff that we need from the `notest` image and our local checkout of the code:
+
+```Dockerfile
+FROM base as production
+WORKDIR /usr/src/app
+COPY entrypoint.sh ./
+COPY --from=notest /usr/src/app/build ./build/
+CMD ["./entrypoint.sh"]
+```
