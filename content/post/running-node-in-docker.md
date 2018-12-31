@@ -1,6 +1,6 @@
 ---
 title: "Running node in docker"
-date: 2018-12-30T16:00:00Z"
+date: 2018-12-30T16:00:00+01:00"
 categories:
 tags:
 - docker
@@ -186,3 +186,82 @@ COPY entrypoint.sh ./
 COPY --from=notest /usr/src/app/build ./build/
 CMD ["./entrypoint.sh"]
 ```
+
+The result is a production image that only contains the node_modules that we use in production,
+the result of the build-step (minus test-scripts)
+and our entrypoint file for running the code.
+
+## Running the code
+
+The final requirement for the docker container was 
+
+- The docker container forwards signals to the daemon process and allows it to exit cleanly.
+
+This means that when you issue a `docker stop`command,
+a signal shall be forwarded to the javascript code that allows it to
+cleanup and close all resources properly before exiting.
+
+The index.ts file in the sample repository looks like this:
+
+```typescript
+import { createServer } from 'http'
+
+const server = createServer((_req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/plain' })
+    res.end('ok')
+})
+
+server.listen(3000, () => {
+    console.log('Listening')
+})
+
+process.on('SIGTERM', () => {
+    console.log('Shutting down')
+    server.close(() => {
+        console.log('Socket closed')
+    })
+})
+```
+
+The code is a very simple http-server. When the user issues a `docker stop` command,
+the process receives a TERM-signal and shuts down.
+After receiving the TERM-signal, the javascript code shall exit without any further action from docker.
+If it does not exit, the docker daemon will kill it unconditionally after a timeout.
+
+Now we need to make sure that the TERM-signal actually reaches the node-process. 
+
+The `docker kill` command sends a TERM signal to the *main* process in the container.
+The simplest way to start node in the container is to end the Dockerfile
+with a
+
+```Dockerfile
+CMD node build/index.js
+```
+
+Under the hood, this results in an sh-process as the main process that in turn starts the node process.
+Unfortunately, the sh-process does not forward signals, which means that the TERM-signal will not be sent to node.
+
+To make it work, you have to use the execform of CMD
+
+```Dockerfile
+CMD ["node", "build/index.js"]
+```
+
+Sometimes you need to pass more parameters to node, set environment variables or something else before you start node.
+To make this easier, I always have an `entrypoint.sh` that starts node:
+
+```Dockerfile
+CMD ["./entrypoint.sh"]
+```
+
+and an entrypoint.sh:
+
+```sh
+#!/usr/bin/env sh
+
+exec node build/index.js
+````
+
+Note that the file ends with an exec-command that replaces the sh-process
+with the node-process.
+This is needed to allow docker to send the TERM-signal to node.
