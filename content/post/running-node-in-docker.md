@@ -263,7 +263,7 @@ and an entrypoint.sh:
 #!/usr/bin/env sh
 
 exec node build/index.js
-````
+```
 
 Note that the file ends with an exec-command that replaces the sh-process
 with the node-process.
@@ -302,8 +302,19 @@ which is fine since you should not be storing any data inside the container anyw
 It is now time to test that the container actually behaves as it should.
 Run build_production.sh followed by run_container.sh.
 Test that the daemon responds by opening http://localhost:3000 in a browser.
-Start `docker logs --follow docker-typescript-sample` in one shell.
-Run `docker stop docker-typescript-sample` in another shell.
+Start 
+
+```
+docker logs --follow docker-typescript-sample
+```
+
+in one shell. Run 
+
+```
+docker stop docker-typescript-sample
+```
+
+in another shell.
 The docker stop command should not take more than a second and you should see
 
 ```
