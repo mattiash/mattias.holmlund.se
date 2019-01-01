@@ -1,6 +1,6 @@
 ---
 title: "Running node in docker"
-date: 2018-12-30T16:00:00+01:00"
+date: 2019-01-01T13:05:00+01:00"
 categories:
 tags:
 - docker
@@ -23,7 +23,7 @@ A good docker workflow should in my opinion satisfy the following requirements:
 - The resulting docker image for running the code only contains the files actually necessary for running the code.
 - The docker container forwards signals to the daemon process and allows it to exit cleanly.
 
-Achieving this is surprisingly difficult.
+Achieving this for node-based projects is surprisingly difficult.
 This article tries to explain how I do this for the images that I build.
 
 The code for this article is available on github as [mattiash/docker-typescript-sample](https://github.com/mattiash/docker-typescript-sample)-
@@ -39,7 +39,7 @@ The build step must be run to produce the javascript-files that we want to run.
 - Tests that should be run as part of the build process to make sure that the code still works.
 
 The build-step differs between different projects, but typical examples are typescript and babel.
-I use typescript, so that is what I will use in my sample code.
+I use typescript, so that is what I will use in the sample code.
 
 ## Docker multi-stage builds
 
@@ -49,7 +49,7 @@ and you can copy stuff between the different images.
 
 ## The base image
 
-The first step in the build-process is to create a `base` docker image.
+The first step in the build-process is to create a *base* docker image.
 This image forms the basis for all other images that we use in our project.
 
 ```Dockerfile
@@ -68,10 +68,10 @@ since we want them in all other images for this project.
 
 ## The build image
 
-The next step is to create a `build` docker image.
+The next step is to create a *build* docker image.
 The build-image includes all the dependencies that we need to build our code and test it.
 We will throw away the build-image after we are done with it,
-so we don't need to bother to keep the size of the image down.
+so we don't need to bother with keeping the size of the image down.
 
 ```Dockerfile
 FROM base as build
@@ -85,17 +85,18 @@ The build image starts with our base-image and then copies the source-code of th
 project into the image.
 
 By running the `npm install` before we copy stuff into the container,
-we allow the docker build to use the cached copy of npm install if package.json hasn't changed.
+we allow the docker build to use the cached copy of node_modules if package.json hasn't changed.
 
 It is possible to selectively copy the stuff that you need,
 but I usually just copy everything.
-However, I don't want to copy node_modules any code built outside the container,
+However, I don't want to copy node_modules or any code built outside the container,
 since then the contents of the resulting image would depend on whatever I had in my node_modules.
 Therefore, I also have a `.dockerignore` file with the following contents:
 
-```
+```plaintext
 node_modules
 build
+output
 ```
 
 The `COPY . ./` actually means "copy everything except the stuff in .dockerignore".
@@ -124,7 +125,7 @@ and include them later as you will see.
 The build-image will contain all our dependencies and our code and tests built.
 We can now run our tests inside the build-image with
 
-```
+```shell
 docker build --target build -t myproject-build:latest .
 docker run --name myproject-build:latest npm run test
 ```
@@ -151,7 +152,7 @@ docker image rm $IMAGE:$UUID
 exit $TEST_EXIT
 ```
 
-The script generates a random identifier (UUID) that I use both as the tag for the image
+The script generates a random identifier (UUID) that is used both as the tag for the image
 as well as for the name of the container that I run the tests in.
 The script then builds the container with the `build` target
 and runs the `autotest` npm-script inside the container.
@@ -230,7 +231,7 @@ If it does not exit, the docker daemon will kill it unconditionally after a time
 
 Now we need to make sure that the TERM-signal actually reaches the node-process. 
 
-The `docker kill` command sends a TERM signal to the *main* process in the container.
+The `docker kill` command sends a TERM signal to the *main* process (PID 1) in the container.
 The simplest way to start node in the container is to end the Dockerfile
 with a
 
@@ -239,7 +240,8 @@ CMD node build/index.js
 ```
 
 Under the hood, this results in an sh-process as the main process that in turn starts the node process.
-Unfortunately, the sh-process does not forward signals, which means that the TERM-signal will not be sent to node.
+Unfortunately, the sh-process does not forward signals,
+which means that the TERM-signal will not be sent to node.
 
 To make it work, you have to use the execform of CMD
 
@@ -247,7 +249,8 @@ To make it work, you have to use the execform of CMD
 CMD ["node", "build/index.js"]
 ```
 
-Sometimes you need to pass more parameters to node, set environment variables or something else before you start node.
+Sometimes you need to pass more parameters to node,
+set environment variables or something else before you start node.
 To make this easier, I always have an `entrypoint.sh` that starts node:
 
 ```Dockerfile
@@ -265,3 +268,61 @@ exec node build/index.js
 Note that the file ends with an exec-command that replaces the sh-process
 with the node-process.
 This is needed to allow docker to send the TERM-signal to node.
+
+## Using the container
+
+To actually build and use the container, there is a `build_production.sh` script that builds and tags the container:
+
+```sh
+#!/bin/sh
+
+docker build -t docker-typescript-sample:latest .
+```
+
+Since the production image is the last part of the Dockerfile,
+it will be built if we don't specify a `--target` parameter.
+
+Finally, the `run_container.sh` script:
+
+```sh
+#!/bin/sh
+
+docker run --init -d -p 3000 --rm --name docker-typescript-sample docker-typescript-sample:latest
+```
+
+The `--init` parameter makes sure that docker starts an init-process inside the container
+that handles zombie-processes.
+This is only needed if the node-process starts sub-processes (e.g. with spawn),
+but it is good practice to always use it since it can lead to strange problems
+if you forget it.
+
+The `--rm` argument tells docker to delete the container when it is stopped,
+which is fine since you should not be storing any data inside the container anyway.
+
+It is now time to test that the container actually behaves as it should.
+Run build_production.sh followed by run_container.sh.
+Test that the daemon responds by opening http://localhost:3000 in a browser.
+Start `docker logs --follow docker-typescript-sample` in one shell.
+Run `docker stop docker-typescript-sample` in another shell.
+The docker stop command should not take more than a second and you should see
+
+```
+Listening
+Shutting down
+Socket closed
+```
+
+from docker logs before it exits.
+This tells us that the daemon was shut down correctly.
+
+## Continuous Integration
+
+Now you should take all these parts and tell your ci-system to run the following steps:
+
+- Run ./autotest.sh
+- Parse the test-output in output/ and check for errors
+- Run ./build_production.sh
+- Run docker stop docker-typescript-sample
+- Run ./run_container.sh
+
+That exercise is up to you to perform.
