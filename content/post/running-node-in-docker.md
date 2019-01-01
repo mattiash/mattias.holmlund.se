@@ -26,7 +26,7 @@ A good docker workflow should in my opinion satisfy the following requirements:
 Achieving this for node-based projects is surprisingly difficult.
 This article tries to explain how I do this for the images that I build.
 
-The code for this article is available on github as [mattiash/docker-typescript-sample](https://github.com/mattiash/docker-typescript-sample)-
+The code for this article is available on github as [mattiash/docker-typescript-sample](https://github.com/mattiash/docker-typescript-sample)
 
 ## Running modern javascript
 
