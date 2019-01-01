@@ -1,6 +1,6 @@
 ---
 title: "Running node in docker"
-date: 2019-01-01T13:05:00+01:00"
+date: 2019-01-01T13:05:00+01:00
 categories:
 tags:
 - docker
