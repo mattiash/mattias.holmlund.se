@@ -37,7 +37,7 @@ All other key types we had supported before were passed in as a string to jsonwe
 
 If you pass a structure containing a Buffer to JSON.stringify, it returns it as an object:
 
-```
+```plaintext
 > JSON.stringify( { key: Buffer.from([0]) } )
 '{"key":{"type":"Buffer","data":[0]}}'
 ```
@@ -45,7 +45,7 @@ If you pass a structure containing a Buffer to JSON.stringify, it returns it as 
 You can see that there is some reasonable representation of the buffer in the response.
 But if you do JSON.parse on the result, you don't get a Buffer back:
 
-```
+```plaintext
 > JSON.parse(JSON.stringify( { key: Buffer.from([0]) } ))
 { key: { type: 'Buffer', data: [ 0 ] } }
 ```
@@ -55,7 +55,7 @@ The key used to be a Buffer, but it got passed through JSON which turned it into
 
 It is easy to convert it back to a Buffer with
 
-```
+```plaintext
 > Buffer.from({ type: 'Buffer', data: [ 0 ] })
 <Buffer 00>
 ```
@@ -66,7 +66,7 @@ but you have to remember to do it yourself.
 
 One situation where data is converted to JSON and back is if you have a naive clone implementation:
 
-```javascript
+```plaintext
 function clone(data) {
     return JSON.parse(JSON.stringify(data))
 }
@@ -92,7 +92,7 @@ when you receive the data, so it is up to you to handle it there.
 
 Our naive clone function in typescript can look like this:
 
-```typescript
+```plaintext
 function clone<T>(data: T): T {
     return JSON.parse(JSON.stringify(data))
 }
@@ -104,7 +104,7 @@ clone does not return the same type in all situations.
 
 Fortunately, recent typescript [can express what clone does](https://effectivetypescript.com/2020/04/09/jsonify/). Replace your clone with this instead:
 
-```typescript
+```plaintext
 type Jsonify<T> = T extends {toJSON(): infer U}
   ? U
   : T extends object
