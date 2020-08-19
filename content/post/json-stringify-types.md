@@ -1,10 +1,11 @@
 ---
 title: "JSON.stringify does not support all types"
-date: 2020-08-19T22:05:08+02:00
+date: 2020-08-18T22:05:08+02:00
 categories:
 tags:
 - javascript
 - typescript
+- node
 keywords:
 - tech
 #thumbnailImage: //example.com/image.jpg
